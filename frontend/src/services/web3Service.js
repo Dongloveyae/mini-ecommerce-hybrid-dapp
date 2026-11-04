@@ -1,11 +1,31 @@
 import { ethers } from "ethers";
-import defaultContractData from "../contracts/contractData.json";
+import contractAbiData from "../../../contractData.json";
+
+// Lấy Địa chỉ Contract từ file .env dùng chung (D:\DA-BlockChain\.env)
+export const CONTRACT_ADDRESS = (
+  import.meta.env.CONTRACT_ADDRESS ||
+  import.meta.env.VITE_CONTRACT_ADDRESS ||
+  ""
+).trim();
+
+export const CONTRACT_CHAIN_ID = (
+  import.meta.env.CONTRACT_CHAIN_ID ||
+  import.meta.env.VITE_CONTRACT_CHAIN_ID ||
+  "11155111"
+).toString();
+
+// Lấy ABI từ file .json
+export const CONTRACT_ABI = Array.isArray(contractAbiData)
+  ? contractAbiData
+  : contractAbiData.abi;
 
 class Web3Service {
   constructor() {
     this.provider = null;
     this.signer = null;
-    this.contractData = defaultContractData;
+    this.contractAddress = CONTRACT_ADDRESS;
+    this.contractChainId = CONTRACT_CHAIN_ID;
+    this.contractAbi = CONTRACT_ABI;
   }
 
   // Kiểm tra tiện ích MetaMask đã được cài đặt chưa
@@ -123,7 +143,7 @@ class Web3Service {
 
     // 1. Kiểm tra mạng Blockchain hiện tại thời gian thực từ MetaMask
     let currentChainId = await this.getCurrentChainId();
-    const expectedChainId = this.contractData.chainId ? this.contractData.chainId.toString() : "31337";
+    const expectedChainId = this.contractChainId || "11155111";
 
     // Nếu phát hiện sai mạng, tự động yêu cầu MetaMask chuyển mạng
     if (currentChainId !== expectedChainId) {
@@ -148,11 +168,11 @@ class Web3Service {
       );
     }
 
-    const contractAddress = this.contractData.address;
-    const contractAbi = this.contractData.abi;
+    const contractAddress = this.contractAddress;
+    const contractAbi = this.contractAbi;
 
     if (!contractAddress || !contractAbi) {
-      throw new Error("Thông tin Smart Contract chưa được cấu hình. Hãy chạy script deploy trước.");
+      throw new Error("Thông tin CONTRACT_ADDRESS (.env) hoặc ABI (.json) chưa được cấu hình.");
     }
 
     const contract = new ethers.Contract(contractAddress, contractAbi, this.signer);

@@ -2,7 +2,11 @@ const { ethers } = require("ethers");
 const { pool } = require("../config/db");
 const fs = require("fs");
 const path = require("path");
-require("dotenv").config();
+const dotenv = require("dotenv");
+
+// Đọc file .env dùng chung ở thư mục gốc trước, sau đó đọc backend/.env
+dotenv.config({ path: path.resolve(__dirname, "../../../.env") });
+dotenv.config({ path: path.resolve(__dirname, "../../.env") });
 
 let contractInstance = null;
 let providerInstance = null;
@@ -14,24 +18,25 @@ async function startBlockchainListener() {
   console.log("==================================================");
   console.log("⛓️ Initializing Blockchain Event Listener (Member 2)...");
 
-  // 1. Đọc thông tin Contract Address và ABI từ file cấu hình tự động
-  const configPath = path.join(__dirname, "../config/contractData.json");
-  let contractAddress = process.env.CONTRACT_ADDRESS;
+  // 1. Lấy Contract Address từ file .env dùng chung (D:\DA-BlockChain\.env)
+  const contractAddress = (process.env.CONTRACT_ADDRESS || "").trim();
+
+  // 2. Lấy ABI từ file .json dùng chung duy nhất (D:\DA-BlockChain\contractData.json)
+  const abiFilePath = path.resolve(__dirname, "../../../contractData.json");
   let contractAbi = null;
 
-  if (fs.existsSync(configPath)) {
+  if (fs.existsSync(abiFilePath)) {
     try {
-      const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
-      contractAddress = contractAddress || config.address;
-      contractAbi = config.abi;
+      const parsed = JSON.parse(fs.readFileSync(abiFilePath, "utf8"));
+      contractAbi = Array.isArray(parsed) ? parsed : parsed.abi;
     } catch (err) {
       console.warn("⚠️ Could not parse contractData.json:", err.message);
     }
   }
 
   if (!contractAddress || !contractAbi) {
-    console.warn("⚠️ [Blockchain Listener] Contract address or ABI not found yet.");
-    console.warn("   Run `npm run deploy:local` or `npm run deploy:sepolia` in smart-contract directory first.");
+    console.warn("⚠️ [Blockchain Listener] Contract address (.env) or ABI (.json) not found yet.");
+    console.warn("   Please check CONTRACT_ADDRESS in .env and ABI in contractData.json.");
     return false;
   }
 

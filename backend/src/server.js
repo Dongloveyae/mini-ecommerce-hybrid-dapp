@@ -2,7 +2,11 @@ const express = require("express");
 const cors = require("cors");
 const path = require("path");
 const fs = require("fs");
-require("dotenv").config();
+const dotenv = require("dotenv");
+
+// Đọc file .env dùng chung ở thư mục gốc và file backend/.env
+dotenv.config({ path: path.resolve(__dirname, "../../.env") });
+dotenv.config({ path: path.resolve(__dirname, "../.env") });
 
 const { testConnection } = require("./config/db");
 const { startBlockchainListener, verifyAndSyncPayment } = require("./services/blockchainListener");
@@ -59,18 +63,14 @@ app.post("/api/blockchain/verify-payment", async (req, res) => {
 
 // Health check endpoint
 app.get("/api/health", (req, res) => {
-  const contractConfigPath = path.join(__dirname, "config/contractData.json");
-  let contractInfo = null;
-  if (fs.existsSync(contractConfigPath)) {
-    try {
-      const config = JSON.parse(fs.readFileSync(contractConfigPath, "utf8"));
-      contractInfo = {
-        address: config.address,
-        network: config.network,
-        chainId: config.chainId,
-      };
-    } catch (e) {}
-  }
+  const contractAddress = (process.env.CONTRACT_ADDRESS || "").trim();
+  const contractInfo = contractAddress
+    ? {
+        address: contractAddress,
+        network: process.env.CONTRACT_NETWORK || "sepolia",
+        chainId: process.env.CONTRACT_CHAIN_ID || "11155111",
+      }
+    : null;
 
   res.json({
     status: "online",
