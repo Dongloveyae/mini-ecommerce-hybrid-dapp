@@ -1,0 +1,127 @@
+const express = require("express");
+const cors = require("cors");
+const path = require("path");
+const fs = require("fs");
+const dotenv = require("dotenv");
+
+// Đọc file .env dùng chung ở thư mục gốc và file backend/.env
+dotenv.config({ path: path.resolve(__dirname, "../../.env") });
+dotenv.config({ path: path.resolve(__dirname, "../.env") });
+
+const { testConnection } = require("./config/db");
+const { startBlockchainListener, verifyAndSyncPayment } = require("./services/blockchainListener");
+
+const productRoutes = require("./routes/productRoutes");
+const cartRoutes = require("./routes/cartRoutes");
+const orderRoutes = require("./routes/orderRoutes");
+const categoryRoutes = require("./routes/categoryRoutes");
+const userRoutes = require("./routes/userRoutes");
+const adminRoutes = require("./routes/adminRoutes");
+const authRoutes = require("./routes/authRoutes");
+const uploadRoutes = require("./routes/uploadRoutes");
+
+const { extractUser } = require("./middleware/authMiddleware");
+
+const app = express();
+const PORT = process.env.PORT || 5000;
+
+// Middlewares
+app.use(cors());
+app.use(express.json());
+app.use(extractUser);
+
+// Phục vụ file tĩnh trong thư mục uploads (ảnh sản phẩm tải lên)
+app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
+
+// Request logger
+app.use((req, res, next) => {
+  console.log(`[${new Date().toLocaleTimeString()}] ${req.method} ${req.url}`);
+  next();
+});
+
+// API Routes
+app.use("/api/auth", authRoutes);
+app.use("/api/products", productRoutes);
+app.use("/api/cart", cartRoutes);
+app.use("/api/orders", orderRoutes);
+app.use("/api/categories", categoryRoutes);
+app.use("/api/users", userRoutes);
+app.use("/api/admin", adminRoutes);
+app.use("/api/upload", uploadRoutes);
+
+// Endpoint xác thực giao dịch tức thì (Dự phòng cho Frontend khi vừa gửi txHash)
+app.post("/api/blockchain/verify-payment", async (req, res) => {
+  const { txHash, orderId } = req.body;
+  if (!txHash) {
+    return res.status(400).json({ success: false, message: "txHash is required" });
+  }
+
+  const result = await verifyAndSyncPayment(txHash, orderId ? Number(orderId) : null);
+  if (result.success) {
+    return res.json(result);
+  } else {
+    return res.status(400).json(result);
+  }
+});
+
+// Health check endpoint
+app.get("/api/health", (req, res) => {
+  const contractAddress = (process.env.CONTRACT_ADDRESS || "").trim();
+  const contractInfo = contractAddress
+    ? {
+        address: contractAddress,
+        network: process.env.CONTRACT_NETWORK || "sepolia",
+        chainId: process.env.CONTRACT_CHAIN_ID || "11155111",
+      }
+    : null;
+
+  res.json({
+    status: "online",
+    timestamp: new Date().toISOString(),
+    contract: contractInfo || "Not loaded",
+    blockchainRpc: process.env.BLOCKCHAIN_RPC_URL || "https://ethereum-sepolia-rpc.publicnode.com",
+    nodeVersion: process.version,
+    uptimeSeconds: Math.floor(process.uptime()),
+  });
+});
+
+// 404 Handler cho các API endpoint không tồn tại
+app.use("/api/*", (req, res) => {
+  res.status(404).json({
+    success: false,
+    message: `API endpoint '${req.originalUrl}' không tồn tại trên hệ thống.`,
+  });
+});
+
+// Centralized Global Error Handler Middleware
+app.use((err, req, res, next) => {
+  console.error("🔥 [Unhandled Server Error]:", err.stack || err);
+  res.status(err.status || 500).json({
+    success: false,
+    message: err.message || "Lỗi hệ thống nội bộ máy chủ.",
+    error: process.env.NODE_ENV === "development" ? err.stack : undefined,
+  });
+});
+
+// Bắt các ngoại lệ ngoài ý muốn để chống crash tiến trình Node.js
+process.on("unhandledRejection", (reason, promise) => {
+  console.warn("⚠️ [Process Warning] Unhandled Rejection tại:", promise, "Lý do:", reason);
+});
+
+process.on("uncaughtException", (error) => {
+  console.error("💥 [Process Error] Uncaught Exception:", error.message);
+});
+
+// Khởi động Server
+app.listen(PORT, async () => {
+  console.log("==================================================");
+  console.log(`🚀 Mini E-Commerce Backend Server running on port ${PORT}`);
+  console.log(`📡 Health Check URL: http://localhost:${PORT}/api/health`);
+  console.log("==================================================");
+
+  // 1. Kiểm tra kết nối CSDL MySQL
+  await testConnection();
+
+  // 2. Khởi chạy Blockchain Listener lắng nghe PaymentCompleted event
+  await startBlockchainListener();
+});
