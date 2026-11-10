@@ -34,7 +34,7 @@ import {
   Image as ImageIcon,
 } from "lucide-react";
 import { apiService } from "../services/apiService";
-import contractData from "../contracts/contractData.json";
+import { CONTRACT_ADDRESS, CONTRACT_CHAIN_ID } from "../services/web3Service";
 
 export default function AdminDashboard({
   onBackToStore,
@@ -752,14 +752,14 @@ export default function AdminDashboard({
                       <h3 className="text-base font-bold text-white">Smart Contract: EcommercePayment.sol (Sepolia Testnet)</h3>
                     </div>
                     <p className="text-xs text-slate-400 mt-1 font-mono">
-                      Hợp đồng: {contractData.address} (Chain ID: {contractData.chainId || "11155111"})
+                      Hợp đồng: {CONTRACT_ADDRESS} (Chain ID: {CONTRACT_CHAIN_ID || "11155111"})
                     </p>
                     <p className="text-xs text-slate-300 mt-1">
                       ✓ Bộ lắng nghe sự kiện (Event Listener) hoạt động 24/7 để đối soát trạng thái đơn hàng ngay khi người mua kích hoạt thanh toán.
                     </p>
                   </div>
                   <a
-                    href={`https://sepolia.etherscan.io/address/${contractData.address}`}
+                    href={`https://sepolia.etherscan.io/address/${CONTRACT_ADDRESS}`}
                     target="_blank"
                     rel="noreferrer"
                     className="flex items-center gap-2 px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-xl border border-slate-700 transition-all hover:scale-105"
