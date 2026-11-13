@@ -20,15 +20,12 @@ const adminRoutes = require("./routes/adminRoutes");
 const authRoutes = require("./routes/authRoutes");
 const uploadRoutes = require("./routes/uploadRoutes");
 
-const { extractUser } = require("./middleware/authMiddleware");
-
 const app = express();
 const PORT = process.env.PORT || 5000;
 
 // Middlewares
 app.use(cors());
 app.use(express.json());
-app.use(extractUser);
 
 // Phục vụ file tĩnh trong thư mục uploads (ảnh sản phẩm tải lên)
 app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
@@ -79,37 +76,8 @@ app.get("/api/health", (req, res) => {
     status: "online",
     timestamp: new Date().toISOString(),
     contract: contractInfo || "Not loaded",
-    blockchainRpc: process.env.BLOCKCHAIN_RPC_URL || "https://ethereum-sepolia-rpc.publicnode.com",
-    nodeVersion: process.version,
-    uptimeSeconds: Math.floor(process.uptime()),
+    blockchainRpc: process.env.BLOCKCHAIN_RPC_URL || "http://127.0.0.1:8545",
   });
-});
-
-// 404 Handler cho các API endpoint không tồn tại
-app.use("/api/*", (req, res) => {
-  res.status(404).json({
-    success: false,
-    message: `API endpoint '${req.originalUrl}' không tồn tại trên hệ thống.`,
-  });
-});
-
-// Centralized Global Error Handler Middleware
-app.use((err, req, res, next) => {
-  console.error("🔥 [Unhandled Server Error]:", err.stack || err);
-  res.status(err.status || 500).json({
-    success: false,
-    message: err.message || "Lỗi hệ thống nội bộ máy chủ.",
-    error: process.env.NODE_ENV === "development" ? err.stack : undefined,
-  });
-});
-
-// Bắt các ngoại lệ ngoài ý muốn để chống crash tiến trình Node.js
-process.on("unhandledRejection", (reason, promise) => {
-  console.warn("⚠️ [Process Warning] Unhandled Rejection tại:", promise, "Lý do:", reason);
-});
-
-process.on("uncaughtException", (error) => {
-  console.error("💥 [Process Error] Uncaught Exception:", error.message);
 });
 
 // Khởi động Server

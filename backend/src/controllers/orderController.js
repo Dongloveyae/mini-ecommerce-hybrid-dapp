@@ -1,5 +1,4 @@
 const { pool } = require("../config/db");
-const { ethers } = require("ethers");
 
 // Lấy danh sách đơn hàng (hỗ trợ lọc theo userId, hoặc lấy toàn bộ cho Admin)
 async function getAllOrders(req, res) {
@@ -83,9 +82,8 @@ async function createOrder(req, res) {
     await connection.beginTransaction();
 
     const { userId = 1, fromCart = true, items = [] } = req.body;
-    // Ưu tiên userId từ token xác thực nếu người dùng đã đăng nhập
-    const effectiveUserId = req.user ? req.user.id : (userId || 1);
     let orderItemsToInsert = [];
+    let totalAmountEth = 0;
 
     if (fromCart) {
       // Lấy từ cart_items trong CSDL (khóa dòng sản phẩm để đảm bảo tính nhất quán tồn kho)
@@ -95,7 +93,7 @@ async function createOrder(req, res) {
          JOIN products p ON c.product_id = p.id
          WHERE c.user_id = ?
          FOR UPDATE`,
-        [effectiveUserId]
+        [userId]
       );
 
       if (cartRows.length === 0) {
@@ -131,8 +129,7 @@ async function createOrder(req, res) {
       }
     }
 
-    // 1. Kiểm tra trạng thái kinh doanh & tồn kho (Chuẩn hóa tính toán số học chính xác bằng BigInt Wei)
-    let totalWei = BigInt(0);
+    // 1. Kiểm tra trạng thái kinh doanh & tồn kho cho toàn bộ sản phẩm
     for (const item of orderItemsToInsert) {
       if (item.is_active === 0) {
         await connection.rollback();
@@ -148,20 +145,14 @@ async function createOrder(req, res) {
           message: `Sản phẩm "${item.product_name}" không đủ số lượng tồn kho (Hiện có: ${item.stock}, Đặt mua: ${item.quantity})!`,
         });
       }
-
-      // Xử lý giá trị Wei bằng ethers.parseEther để triệt tiêu lỗi số thực JavaScript
-      const unitPriceFormatted = parseFloat(item.price_eth).toFixed(8);
-      const itemWei = ethers.parseEther(unitPriceFormatted) * BigInt(item.quantity);
-      totalWei += itemWei;
+      totalAmountEth += parseFloat(item.price_eth) * item.quantity;
     }
-
-    const totalAmountEth = ethers.formatEther(totalWei);
 
     // 2. Tạo bản ghi đơn hàng với trạng thái PENDING và is_deleted = 0
     const [orderResult] = await connection.query(
       `INSERT INTO orders (user_id, total_amount_eth, status, is_deleted)
        VALUES (?, ?, 'PENDING', 0)`,
-      [effectiveUserId, totalAmountEth]
+      [userId, totalAmountEth.toFixed(8)]
     );
 
     const orderId = orderResult.insertId;
@@ -183,19 +174,19 @@ async function createOrder(req, res) {
 
     // 4. Nếu tạo từ giỏ hàng thì xóa sạch giỏ hàng của user
     if (fromCart) {
-      await connection.query("DELETE FROM cart_items WHERE user_id = ?", [effectiveUserId]);
+      await connection.query("DELETE FROM cart_items WHERE user_id = ?", [userId]);
     }
 
     await connection.commit();
 
-    console.log(`📦 [Order Created & Stock Deducted] Đơn hàng #${orderId} | Tổng: ${totalAmountEth} ETH | Tồn kho đã tự động trừ.`);
+    console.log(`📦 [Order Created & Stock Deducted] Đơn hàng #${orderId} | Tổng: ${totalAmountEth.toFixed(8)} ETH | Tồn kho đã tự động trừ.`);
 
     res.status(201).json({
       success: true,
       message: "Order created successfully (Pending Payment)",
       data: {
         orderId,
-        totalAmountEth,
+        totalAmountEth: totalAmountEth.toFixed(8),
         status: "PENDING",
       },
     });
@@ -228,15 +219,6 @@ async function cancelOrSoftDeleteOrder(req, res) {
     }
 
     const order = rows[0];
-
-    // Kiểm tra quyền sở hữu đơn hàng (Người tạo đơn hoặc Admin mới được hủy)
-    if (req.user && req.user.role !== "ADMIN" && order.user_id !== req.user.id) {
-      await connection.rollback();
-      return res.status(403).json({
-        success: false,
-        message: "Quyền truy cập bị từ chối: Bạn không thể hủy đơn hàng của người dùng khác!",
-      });
-    }
 
     // Không cho phép hủy đơn hàng đã thanh toán PAID on-chain
     if (order.status === "PAID") {

@@ -35,15 +35,8 @@ async function getCartByUser(req, res) {
 async function addToCart(req, res) {
   try {
     const { userId = 1, productId, quantity = 1 } = req.body;
-    const effectiveUserId = req.user ? req.user.id : (userId || 1);
-
     if (!productId) {
       return res.status(400).json({ success: false, message: "productId is required" });
-    }
-
-    const parsedQty = parseInt(quantity, 10);
-    if (isNaN(parsedQty) || parsedQty <= 0) {
-      return res.status(400).json({ success: false, message: "Số lượng sản phẩm phải là số nguyên dương lớn hơn 0" });
     }
 
     // Kiểm tra sản phẩm có tồn tại và còn hàng không
@@ -52,22 +45,16 @@ async function addToCart(req, res) {
       return res.status(404).json({ success: false, message: "Sản phẩm không tồn tại" });
     }
     const product = products[0];
-    if (product.is_active === 0) {
-      return res.status(400).json({ success: false, message: `Sản phẩm "${product.name}" hiện đang tạm ngừng kinh doanh!` });
-    }
     if (product.stock <= 0) {
       return res.status(400).json({ success: false, message: `Sản phẩm "${product.name}" hiện đã hết hàng trong kho!` });
-    }
-    if (parsedQty > product.stock) {
-      return res.status(400).json({ success: false, message: `Số lượng đặt (${parsedQty}) vượt quá tồn kho hiện có (${product.stock})!` });
     }
 
     // UPSERT vào cart_items
     await pool.query(
       `INSERT INTO cart_items (user_id, product_id, quantity) 
        VALUES (?, ?, ?)
-       ON DUPLICATE KEY UPDATE quantity = LEAST(quantity + VALUES(quantity), ?)`,
-      [effectiveUserId, productId, parsedQty, product.stock]
+       ON DUPLICATE KEY UPDATE quantity = quantity + VALUES(quantity)`,
+      [userId, productId, quantity]
     );
 
     res.json({ success: true, message: "Product added to cart successfully" });
@@ -83,33 +70,16 @@ async function updateCartItem(req, res) {
     const { id } = req.params;
     const { quantity } = req.body;
 
-    const parsedQty = parseInt(quantity, 10);
-    if (isNaN(parsedQty)) {
-      return res.status(400).json({ success: false, message: "Số lượng không hợp lệ" });
-    }
-
-    if (parsedQty <= 0) {
+    if (quantity <= 0) {
       await pool.query("DELETE FROM cart_items WHERE id = ?", [id]);
       return res.json({ success: true, message: "Cart item removed" });
     }
 
-    // Kiểm tra tồn kho của sản phẩm tương ứng
-    const [cartRows] = await pool.query(
-      "SELECT c.*, p.stock, p.name FROM cart_items c JOIN products p ON c.product_id = p.id WHERE c.id = ?",
-      [id]
-    );
-    if (cartRows.length === 0) {
+    const [result] = await pool.query("UPDATE cart_items SET quantity = ? WHERE id = ?", [quantity, id]);
+    if (result.affectedRows === 0) {
       return res.status(404).json({ success: false, message: "Cart item not found" });
     }
 
-    if (parsedQty > cartRows[0].stock) {
-      return res.status(400).json({
-        success: false,
-        message: `Số lượng cập nhật (${parsedQty}) vượt quá tồn kho hiện có (${cartRows[0].stock}) của sản phẩm "${cartRows[0].name}"!`,
-      });
-    }
-
-    await pool.query("UPDATE cart_items SET quantity = ? WHERE id = ?", [parsedQty, id]);
     res.json({ success: true, message: "Cart item updated successfully" });
   } catch (error) {
     console.error("Error updating cart item:", error);

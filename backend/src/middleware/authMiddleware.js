@@ -28,25 +28,8 @@ function requireAdmin(req, res, next) {
   next();
 }
 
-function extractUser(req, res, next) {
-  const authHeader = req.headers["authorization"];
-  const token = authHeader && authHeader.split(" ")[1];
-
-  if (!token) {
-    return next();
-  }
-
-  jwt.verify(token, JWT_SECRET, (err, user) => {
-    if (!err && user) {
-      req.user = user;
-    }
-    next();
-  });
-}
-
 module.exports = {
   verifyToken,
   requireAdmin,
-  extractUser,
   JWT_SECRET,
 };
